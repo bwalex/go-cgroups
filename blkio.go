@@ -30,6 +30,10 @@ type BlkioStat struct {
 	WaitTimeWrite     uint64 `file:"blkio.io_wait_time_recursive" sum:"Write"`
 }
 
+type BlkioItemizedStats struct {
+	Stats map[string]BlkioStat
+}
+
 const (
 	ControllerBlkio = "blkio"
 )
@@ -108,6 +112,15 @@ func GetBlkioStats(cg Cgroup) (BlkioStat, error) {
 	if err != nil {
 		return stats, err
 	}
+
+	return stats, nil
+}
+
+func GetBlkioItemizedStats(cg Cgroup) (BlkioItemizedStats, error) {
+	var stats BlkioItemizedStats
+	stats.Stats = make(map[string]BlkioStat)
+
+	// XXX: TODO
 
 	return stats, nil
 }

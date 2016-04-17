@@ -29,12 +29,21 @@ type NetStat struct {
 	TxMulticast  uint64 `field:"15"`
 }
 
+type NetItemizedStats struct {
+	Stats map[string]NetStat
+}
+
 func GetNetInterfaces(cg Cgroup) ([]string, error) {
-	nets := make([]string, 0, 4)
 	lines, err := procNetDevLines(cg)
 	if err != nil {
-		return nets, err
+		return make([]string, 0), err
 	}
+
+	return getNetInterfacesRaw(lines)
+}
+
+func getNetInterfacesRaw(lines []string) ([]string, error) {
+	nets := make([]string, 0, 4)
 
 	for i := range lines {
 		fields := strings.Fields(lines[i])
@@ -59,12 +68,43 @@ func GetNetStats(cg Cgroup, intf string) (NetStat, error) {
 	return stats, nil
 }
 
+func GetNetItemizedStats(cg Cgroup) (NetItemizedStats, error) {
+	var stats NetItemizedStats
+	stats.Stats = make(map[string]NetStat)
+
+	lines, err := procNetDevLines(cg)
+	if err != nil {
+		return stats, err
+	}
+
+	devs, err := getNetInterfacesRaw(lines)
+	if err != nil {
+		return stats, err
+	}
+
+	for i := range devs {
+		var stat NetStat
+		err = populateNetStatsRaw(devs[i], lines, &stat)
+		if err != nil {
+			continue
+		}
+		stats.Stats[devs[i]] = stat
+	}
+
+	return stats, nil
+}
+
 func populateNetStats(cg Cgroup, intf string, stat *NetStat) error {
-	counts := make([]uint64, 0, 20)
 	lines, err := procNetDevLines(cg)
 	if err != nil {
 		return err
 	}
+
+	return populateNetStatsRaw(intf, lines, stat)
+}
+
+func populateNetStatsRaw(intf string, lines []string, stat *NetStat) error {
+	counts := make([]uint64, 0, 20)
 
 	for i := range lines {
 		fields := strings.Fields(lines[i])

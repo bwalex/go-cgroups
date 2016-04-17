@@ -70,9 +70,28 @@ func TestNetStatTotals(t *testing.T) {
 	t.Logf("%+v\n", stats)
 }
 
+func TestNetStatItemized(t *testing.T) {
+	stats, err := GetNetItemizedStats(Cgroup{ Cgroup: "/system.slice" })
+
+	if err != nil {
+		t.Fail()
+	}
+
+	t.Logf("%+v\n", stats)
+}
+
 func BenchmarkNetStatTotals(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, err := GetNetStats(Cgroup{ Cgroup: "/system.slice" }, "")
+		if err != nil {
+			b.Fail()
+		}
+	}
+}
+
+func BenchmarkNetStatItemized(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		_, err := GetNetItemizedStats(Cgroup{ Cgroup: "/system.slice" })
 		if err != nil {
 			b.Fail()
 		}

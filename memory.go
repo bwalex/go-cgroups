@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type MemoryStat struct {
@@ -50,6 +51,8 @@ type MemoryStat struct {
 	KMemUsageMax       uint64 `file:"memory.kmem.max_usage_in_bytes"`
 	KMemFailCnt        uint64 `file:"memory.kmem.failcnt"`
 	KMemLimit          uint64 `file:"memory.kmem.limit_in_bytes"`
+
+	SampleTime         time.Time
 }
 
 const (
@@ -133,6 +136,8 @@ func populateMemoryOther(cg Cgroup, stat *MemoryStat) error {
 
 func GetMemoryStats(cg Cgroup) (MemoryStat, error) {
 	var stats MemoryStat
+
+	stats.SampleTime = time.Now()
 
 	err := populateMemoryStat(cg, &stats)
 	if err != nil {

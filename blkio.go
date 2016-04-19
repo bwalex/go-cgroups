@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type BlkioStat struct {
@@ -28,15 +29,73 @@ type BlkioStat struct {
 	WaitTime          uint64 `file:"blkio.io_wait_time_recursive"`
 	WaitTimeRead      uint64 `file:"blkio.io_wait_time_recursive" sum:"Read"`
 	WaitTimeWrite     uint64 `file:"blkio.io_wait_time_recursive" sum:"Write"`
+
+	SampleTime        time.Time
+}
+
+func (s BlkioStat) Delta(prevStats BlkioStat) BlkioDeltaStat {
+	return CalcBlkioDeltaStats(s, prevStats)
 }
 
 type BlkioItemizedStats struct {
 	Stats map[string]BlkioStat
 }
 
+type BlkioDeltaStat struct {
+	IoRate                uint64
+	IoRateRead            uint64
+	IoRateWrite           uint64
+	ByteRate              uint64
+	ByteRateRead          uint64
+	ByteRateWrite         uint64
+	AvgServiceTimeNs      uint64
+	AvgServiceTimeReadNs  uint64
+	AvgServiceTimeWriteNs uint64
+	AvgWaitTimeNs         uint64
+	AvgWaitTimeReadNs     uint64
+	AvgWaitTimeWriteNs    uint64
+}
+
 const (
 	ControllerBlkio = "blkio"
 )
+
+func CalcBlkioDeltaStats(stats BlkioStat, prevStats BlkioStat) BlkioDeltaStat {
+	var deltaStat BlkioDeltaStat
+
+	rdByteDelta := stats.ServiceBytesRead - prevStats.ServiceBytesRead
+	wrByteDelta := stats.ServiceBytesWrite - prevStats.ServiceBytesWrite
+	allByteDelta := stats.ServiceBytes - prevStats.ServiceBytes
+	rdIoDelta := stats.ServicedRead - prevStats.ServicedRead
+	wrIoDelta := stats.ServicedWrite - prevStats.ServicedWrite
+	allIoDelta := stats.Serviced - prevStats.Serviced
+	serviceTimeDelta := stats.ServiceTime - prevStats.ServiceTime
+	rdServiceTimeDelta := stats.ServiceTimeRead - prevStats.ServiceTimeRead
+	wrServiceTimeDelta := stats.ServiceTimeWrite - prevStats.ServiceTimeWrite
+	waitTimeDelta := stats.WaitTime - prevStats.WaitTime
+	rdWaitTimeDelta := stats.WaitTimeRead - prevStats.WaitTimeRead
+	wrWaitTimeDelta := stats.WaitTimeWrite - prevStats.WaitTimeWrite
+	timeDeltaMs := uint64(stats.SampleTime.Sub(prevStats.SampleTime).Nanoseconds() / int64(time.Millisecond))
+
+	deltaStat.ByteRateRead = (rdByteDelta * 1000) / timeDeltaMs
+	deltaStat.ByteRateWrite = (wrByteDelta * 1000) / timeDeltaMs
+	deltaStat.ByteRate = (allByteDelta * 1000) / timeDeltaMs
+	deltaStat.IoRateRead = (rdIoDelta * 1000) / timeDeltaMs
+	deltaStat.IoRateWrite = (wrIoDelta * 1000) / timeDeltaMs
+	deltaStat.IoRate = (allIoDelta * 1000) / timeDeltaMs
+
+	// +1 fudging to avoid div-by-zero - shouldn't matter
+	// at relevant sample sizes.
+	deltaStat.AvgServiceTimeReadNs = rdServiceTimeDelta / (rdIoDelta+1)
+	deltaStat.AvgServiceTimeWriteNs = wrServiceTimeDelta / (wrIoDelta+1)
+	deltaStat.AvgServiceTimeNs = serviceTimeDelta / (allIoDelta+1)
+
+	deltaStat.AvgWaitTimeReadNs = rdWaitTimeDelta / (rdIoDelta+1)
+	deltaStat.AvgWaitTimeWriteNs = wrWaitTimeDelta / (wrIoDelta+1)
+	deltaStat.AvgWaitTimeNs = waitTimeDelta / (allIoDelta+1)
+
+	return deltaStat
+}
 
 func blkioParse(filePath string, sumField string) (uint64, error) {
 	fd, err := os.Open(filePath)
@@ -80,6 +139,8 @@ func blkioParse(filePath string, sumField string) (uint64, error) {
 }
 
 func populateBlkioOther(cg Cgroup, stat *BlkioStat) error {
+	stat.SampleTime = time.Now()
+
 	v := reflect.ValueOf(stat).Elem()
 	for i := 0; i < v.NumField(); i++ {
 		tag := v.Type().Field(i).Tag

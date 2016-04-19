@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type NetStat struct {
@@ -27,10 +28,53 @@ type NetStat struct {
 	TxFrame      uint64 `field:"13"`
 	TxCompressed uint64 `field:"14"`
 	TxMulticast  uint64 `field:"15"`
+
+	SampleTime   time.Time
 }
 
 type NetItemizedStats struct {
 	Stats map[string]NetStat
+}
+
+type NetDeltaStat struct {
+	RxByteRate   uint64
+	RxPacketRate uint64
+	RxDropRate   float64
+	RxErrorRate  float64
+	TxByteRate   uint64
+	TxPacketRate uint64
+	TxDropRate   float64
+	TxErrorRate  float64
+}
+
+func (stats NetStat) Delta(prevStats NetStat) NetDeltaStat {
+	return CalcNetDeltaStats(stats, prevStats)
+}
+
+func CalcNetDeltaStats(stats NetStat, prevStats NetStat) NetDeltaStat {
+	var deltaStat NetDeltaStat
+
+	rxByteDelta := stats.RxBytes - prevStats.RxBytes
+	rxPktDelta := stats.RxPackets - prevStats.RxPackets
+	rxDropDelta := stats.RxDrop - prevStats.RxDrop
+	rxErrorDelta := stats.RxErrors - prevStats.RxErrors
+	txByteDelta := stats.TxBytes - prevStats.TxBytes
+	txPktDelta := stats.TxPackets - prevStats.TxPackets
+	txDropDelta := stats.TxDrop - prevStats.TxDrop
+	txErrorDelta := stats.TxErrors - prevStats.TxErrors
+
+	timeDeltaMs := uint64(stats.SampleTime.Sub(prevStats.SampleTime).Nanoseconds() / int64(time.Millisecond))
+
+	deltaStat.RxByteRate = (rxByteDelta * 1000) / timeDeltaMs
+	deltaStat.RxPacketRate = (rxPktDelta * 1000) / timeDeltaMs
+	deltaStat.RxDropRate = float64(rxDropDelta * 1000) / float64(timeDeltaMs)
+	deltaStat.RxErrorRate = float64(rxErrorDelta * 1000) / float64(timeDeltaMs)
+	deltaStat.TxByteRate = (txByteDelta * 1000) / timeDeltaMs
+	deltaStat.TxPacketRate = (txPktDelta * 1000) / timeDeltaMs
+	deltaStat.TxDropRate = float64(txDropDelta * 1000) / float64(timeDeltaMs)
+	deltaStat.TxErrorRate = float64(txErrorDelta * 1000) / float64(timeDeltaMs)
+
+	return deltaStat
 }
 
 func GetNetInterfaces(cg Cgroup) ([]string, error) {
@@ -105,6 +149,8 @@ func populateNetStats(cg Cgroup, intf string, stat *NetStat) error {
 
 func populateNetStatsRaw(intf string, lines []string, stat *NetStat) error {
 	counts := make([]uint64, 0, 20)
+
+	stat.SampleTime = time.Now()
 
 	for i := range lines {
 		fields := strings.Fields(lines[i])
